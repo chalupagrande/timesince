@@ -3,7 +3,21 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const redis = require('redis');
+const auth = require("./auth.js");
 const app = express();
+
+const client = redis.createClient(11497, "pub-redis-11497.dal-05.1.sl.garantiadata.com", {no_ready_check: true});
+
+client.auth(auth.password, function(err){
+  if(err){
+    new Error(err)
+  }
+})
+
+client.on("connect", function(){
+  console.log("Connected to Redis")
+})
 
 
 const port = process.env.VCAP_APP_PORT || 3000;
