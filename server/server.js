@@ -34,23 +34,26 @@ var storage = {}
 //POST
 app.post('/slack', (req, res, next)=>{
   var b = req.body
-  if(b.token != "S83RYJu8eJcmqjxjEGFcbreJ"){
-    res.send("You have the wrong credentials. ")
+  if(b.token != "VD5a2oMjTKS5vwNKrjfkdIm6" || b.channel_id != "G0U83AL2E"){
+    res.end("You have the wrong credentials. Contact @j.skinner to get credentials.")
+  } else {
+    var text = b.text
+    var command = text.split(' ')[0]
+    var name = text.slice(command.length+1)
+    var key = formatKey(name)
+
+    client.get(key, function(err, reply){
+      if(err){
+        throw new Error(error)
+      }
+      console.log("TYPE OF: "+typeof reply)
+      console.log('REPLY: ' + reply)
+      res.send({
+        response_type: "in_channel",
+        text: handleReply(reply, command, name, key)
+      })
+    })
   }
-
-  var text = b.text
-  var command = text.split(' ')[0]
-  var name = text.slice(command.length+1)
-  var key = formatKey(name)
-
-  client.get(key, function(err, reply){
-    if(err){
-      throw new Error(error)
-    }
-    console.log("TYPE OF: "+typeof reply)
-    console.log('REPLY: ' + reply)
-    res.send(handleReply(reply, command, name, key))
-  })
 })
 
 app.listen(port)
