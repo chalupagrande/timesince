@@ -7,6 +7,8 @@ const redis = require('redis');
 const auth = require("./auth.js");
 const app = express();
 
+
+// Connect to REDIS Database
 const client = redis.createClient(11497, "pub-redis-11497.dal-05.1.sl.garantiadata.com", {no_ready_check: true});
 
 client.auth(auth.password, function(err){
@@ -41,32 +43,18 @@ app.post('/slack', (req, res, next)=>{
   var name = text.slice(command.length+1)
   var key = formatKey(name)
 
-  if(command == 'set' && !storage[key]){
-    storage[key] = {
-                     name: name,
-                     time: new Date()
-                   }
-    res.send(name + " has been created!")
-  } else if( command == "set" && storage[key]){
-    res.send(name +" alread exists!")
-  } else if( command == "reset" && storage[key]){
-    var time = findTime(storage[key].time)
-    storage[key].time = new Date()
-    res.send( name + " has been reset. It was at "+ time)
-  } else if( command == "reset" && !storage[key]){
-    res.send("There was no command found by the name: "+ name)
-  } else if( command == "get" && storage[key]){
-    var time = findTime(storage[key].time)
-    res.send("Time Since "+ name +": "+ time)
-  } else {
-    res.send('Something went wrong')
-  }
+  client.get(key, function(err, reply){
+    if(err){
+      throw new Error(error)
+    }
+    console.log("TYPE OF: "+typeof reply)
+    console.log('REPLY: ' + reply)
+    res.send(handleReply(reply, command, name, key))
+  })
 })
 
 app.listen(port)
 console.log('running on '+ port)
-
-
 
 /* HELPERS
 ~~~~~~~~~~~~~~~~~~~ */
@@ -102,14 +90,43 @@ function formatTime(milliseconds) {
    return result
 }
 
-function formatObject(obj){
-  var result = {}
-  result.name = obj.name
-  result.time = new Date()
-  return result
-}
-
 function formatKey(string){
   var temp = string.toLowerCase()
   return temp.split(' ').join('-')
+}
+function formatObj(name){
+  return JSON.stringify({
+                     name: name,
+                     time: new Date()
+                   })
+}
+function handleReply(existing, command, name, key){
+
+  existing = JSON.parse(existing)
+
+  //handle request
+  if(command == 'set' && !existing){
+    client.set(key, formatObj(name))
+    return name + " has been created!"
+
+  } else if( command == "set" && existing){
+    return name +" alread exists!"
+
+  } else if( command == "reset" && existing){
+    var time = findTime(new Date(existing.time))
+    client.set(key, formatObj(name))
+    return  name + " has been reset. It was at "+ time
+
+  } else if( command == "reset" && !existing){
+    return "There was no command found by the name: "+ name
+
+  } else if( command == "get" && existing){
+    console.log(existing["time"])
+    var time = findTime(new Date(existing.time))
+    return "Time Since "+ name +": "+ time
+
+  } else {
+    return 'Something went wrong'
+
+  }
 }
