@@ -29,7 +29,6 @@ app.use(cors())
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json());
 
-var storage = {}
 
 //POST
 app.post('/slack', (req, res, next)=>{
@@ -45,9 +44,10 @@ app.post('/slack', (req, res, next)=>{
     client.get(key, function(err, reply){
       if(err){
         throw new Error(error)
+        res.end("Something went wrong. Nothing was found with by that entry. Try #list to see all the watches.")
+        return
       }
-      console.log("TYPE OF: "+typeof reply)
-      console.log('REPLY: ' + reply)
+
       res.send({
         response_type: "in_channel",
         text: handleReply(reply, command, name, key)
@@ -108,28 +108,83 @@ function handleReply(existing, command, name, key){
   existing = JSON.parse(existing)
 
   //handle request
-  if(command == 'set' && !existing){
+  if(command == '#set' && !existing){
     client.set(key, formatObj(name))
     return name + " has been created!"
 
-  } else if( command == "set" && existing){
+  } else if( command == "#set" && existing){
     return name +" alread exists!"
 
-  } else if( command == "reset" && existing){
+  } else if( command == "#reset" && existing){
     var time = findTime(new Date(existing.time))
     client.set(key, formatObj(name))
     return  name + " has been reset. It was at "+ time
 
-  } else if( command == "reset" && !existing){
-    return "There was no command found by the name: "+ name
+  } else if( command == "#reset" && !existing){
+    return "There was no watch found by the name: "+ name
 
-  } else if( command == "get" && existing){
-    console.log(existing["time"])
+  } else if( command == "#get" && existing){
     var time = findTime(new Date(existing.time))
     return "Time Since "+ name +": "+ time
 
-  } else {
-    return 'Something went wrong'
+  } else if(command == "#get" && !existing){
+    return "There was no watch found by that name"
 
+  } else if(command == "#help"){
+    return "Using one of the following commands: \n \
+    #set watch_name: This will create a new watch and start counting the time thats passed. \n \
+    #reset watch_name: This will reset the time for the watch to 0. \n \
+    #get watch_name: This will returnt the current time on the watch, but not reset it."
+
+  } else if(command.split('')[0] == "#"){
+    return "That was not a valid command."
+
+  } else if(command.split('')[0] !='#'){
+    var time = findTime(new Date(existing.time))
+    return "Time Since "+ name +": "+ time
   }
+}
+
+
+var router = function(existing, command, name, key){
+  switch(command){
+    case '!admin':
+      return routes.admin()
+      break;
+    case '#set':
+      break;
+    case '#reset':
+      break;
+    case '#get':
+      break;
+    case '#help':
+      return routes.help()
+      break;
+    default:
+      if(command.split('')[0] != '#'){
+        return routes.get()
+
+      } if(command.split('')[0] == '#'){
+        return routes.incorrect()
+      }
+      break;
+  }
+}
+
+var routes = {
+  admin: function(name){
+
+  },
+  incorrect: function(){
+    return "That command or watch does not exist. Use #help for a list of commands"
+  },
+  help: function(){
+    return "Using one of the following commands: \n \
+          #set watch_name: This will create a new watch and start counting the time thats passed. \n \
+          #reset watch_name: This will reset the time for the watch to 0. \n \
+          #get watch_name: This will returnt the current time on the watch, but not reset it."
+  },
+  get: function(name){
+
+  },
 }
