@@ -37,22 +37,14 @@ app.post('/slack', (req, res, next)=>{
     res.end("You have the wrong credentials. Contact @j.skinner to get credentials.")
   } else {
     var text = b.text
-    var command = text.split(' ')[0]
-    var name = text.slice(command.length+1)
+    var admin = !!text.match(/\!\!| \!\!|\!\! /g)
+    var text = text.replace(/\!\!| \!\!|\!\! /g, '')
+    var command = text.match(/\#set|\#get|\#reset|\#help|\#list/g)
+    command = !!command ? command[0] : "#get"
+    var name = text.replace(new RegExp(command+' '), '')
     var key = formatKey(name)
 
-    client.get(key, function(err, reply){
-      if(err){
-        throw new Error(error)
-        res.end("Something went wrong. Nothing was found with by that entry. Try #list to see all the watches.")
-        return
-      }
-
-      res.send({
-        response_type: "in_channel",
-        text: handleReply(reply, command, name, key)
-      })
-    })
+    var response = router({res, text, command, name, key, admin})
   }
 })
 
@@ -103,88 +95,125 @@ function formatObj(name){
                      time: new Date()
                    })
 }
-function handleReply(existing, command, name, key){
 
-  existing = JSON.parse(existing)
+var router = function(opts){
+  let res = opts.res,
+      text = opts.text,
+      command = opts.command,
+      name = opts.name,
+      key = opts.key,
+      admin = opts.isAdmin;
 
-  //handle request
-  if(command == '#set' && !existing){
-    client.set(key, formatObj(name))
-    return name + " has been created!"
 
-  } else if( command == "#set" && existing){
-    return name +" alread exists!"
+  let r = {
+    "response_type": "in_channel"
+  };
 
-  } else if( command == "#reset" && existing){
-    var time = findTime(new Date(existing.time))
-    client.set(key, formatObj(name))
-    return  name + " has been reset. It was at "+ time
-
-  } else if( command == "#reset" && !existing){
-    return "There was no watch found by the name: "+ name
-
-  } else if( command == "#get" && existing){
-    var time = findTime(new Date(existing.time))
-    return "Time Since "+ name +": "+ time
-
-  } else if(command == "#get" && !existing){
-    return "There was no watch found by that name"
-
-  } else if(command == "#help"){
-    return "Using one of the following commands: \n \
-    #set watch_name: This will create a new watch and start counting the time thats passed. \n \
-    #reset watch_name: This will reset the time for the watch to 0. \n \
-    #get watch_name: This will returnt the current time on the watch, but not reset it."
-
-  } else if(command.split('')[0] == "#"){
-    return "That was not a valid command."
-
-  } else if(command.split('')[0] !='#'){
-    var time = findTime(new Date(existing.time))
-    return "Time Since "+ name +": "+ time
+  if(admin){
+      result.response_type = "ephemeral"
   }
-}
 
-
-var router = function(existing, command, name, key){
-  switch(command){
-    case '!admin':
-      return routes.admin()
-      break;
-    case '#set':
-      break;
-    case '#reset':
-      break;
-    case '#get':
-      break;
-    case '#help':
-      return routes.help()
-      break;
-    default:
-      if(command.split('')[0] != '#'){
-        return routes.get()
-
-      } if(command.split('')[0] == '#'){
-        return routes.incorrect()
+  if(command == '#list'){
+    client.keys('*', function(err, reply){
+      if(err){
+        throw new Error(err)
+        res.send(routes.error())
       }
-      break;
+      else {
+        r.response_type = "ephemeral"
+        r.text = reply.join('\n')
+        res.send(r)
+      }
+    })
+  }
+
+  else if(command == '#set'){
+    console.log('set')
+    client.setnx(key, formatObj(name), function(err,reply){
+      if(err){
+        throw new Error(err)
+        res.send(routes.error())
+      }
+      else if(reply == 0){ res.send(routes.incorrect()) }
+      else {
+        r.text = routes.set(name, key)
+        res.send(r)
+      }
+    })
+  }
+
+  else if(command == '#reset'){
+    console.log('reset')
+    client.getset(key, formatObj(name), function(err,reply){
+      if(err){
+        throw new Error(err)
+        res.send(routes.incorrect())
+      }
+      else {
+        r.text = routes.reset(name, key, reply)
+        res.send(r)
+      }
+    })
+  }
+
+  else if(command == '#get'){
+    client.get(key, function(err,reply){
+      if(err){
+        throw new Error(err)
+        res.send(routes.incorrect())
+      }
+      else {
+        r.text = routes.get(name, key, reply)
+        res.send(r)
+      }
+    })
+  }
+
+  else if(command == '#help'){
+    res.send(routes.help())
   }
 }
 
 var routes = {
   admin: function(name){
+    return "This is admin mode"
 
   },
   incorrect: function(){
-    return "That command or watch does not exist. Use #help for a list of commands"
+    return {
+      response_type: 'ephemeral',
+      text: "That command or watch does not exist or already exists. Use #help for a list of commands"
+    }
   },
   help: function(){
-    return "Using one of the following commands: \n \
-          #set watch_name: This will create a new watch and start counting the time thats passed. \n \
-          #reset watch_name: This will reset the time for the watch to 0. \n \
-          #get watch_name: This will returnt the current time on the watch, but not reset it."
+    return {
+      response_type: 'ephemeral',
+      text:   "Using one of the following commands: \n \
+              #set watch_name: This will create a new watch and start counting the time thats passed. \n \
+              #reset watch_name: This will reset the time for the watch to 0. \n \
+              #get watch_name: This will returnt the current time on the watch, but not reset it."
+    }
   },
-  get: function(name){
+  get: function(name, key, reply){
+    console.log('get '+ name + ' ' + key)
+    reply = JSON.parse(reply)
+    var time = findTime(new Date(reply.time))
+    return "Time Since "+ reply.name +": "+ time
+  },
+  set: function(name, key){
+    return name + " has been set!"
+  },
+  error: function(){
+    return {
+      response_type: "ephemeral",
+      text: "There seems to have been a server error"
+    }
+  },
+  reset: function(name, key, reply){
+    console.log('reset')
+    reply = JSON.parse(reply)
+    var time = findTime(new Date(reply.time))
+    return "Time Since "+ name +": "+ time
+  }
 
-  },
 }
