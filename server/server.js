@@ -89,6 +89,11 @@ function formatKey(string){
   var temp = string.toLowerCase()
   return temp.split(' ').join('-')
 }
+
+function unformatKey(key){
+  return key.replace(/\-/g, ' ')
+}
+
 function formatObj(name){
   return JSON.stringify({
                      name: name,
@@ -120,8 +125,12 @@ var router = function(opts){
         res.send(routes.error())
       }
       else {
+        console.log(Array.isArray(reply))
+        reply = reply.map((el)=>{
+          return unformatKey(el)
+        })
         r.response_type = "ephemeral"
-        r.text = reply.join('\n')
+        r.text = "*List of Timers:* \n" + reply.join('\n')
         res.send(r)
       }
     })
@@ -182,23 +191,24 @@ var routes = {
   incorrect: function(){
     return {
       response_type: 'ephemeral',
-      text: "That command or watch does not exist or already exists. Use #help for a list of commands"
+      text: "That command or timer does not exist or already exists. Use #help for a list of commands"
     }
   },
   help: function(){
     return {
       response_type: 'ephemeral',
       text:   "Using one of the following commands: \n \
-              #set watch_name: This will create a new watch and start counting the time thats passed. \n \
-              #reset watch_name: This will reset the time for the watch to 0. \n \
-              #get watch_name: This will returnt the current time on the watch, but not reset it."
+              *#set timer_name:* This will create a new timer and start counting the time thats passed. \n \
+              *#reset timer_name:* This will reset the time for the timer to 0. \n \
+              *#get timer_name:* This will return the current time on the timer, but not reset it. \n \
+              *#list:* This will list the names of the timers"
     }
   },
   get: function(name, key, reply){
     console.log('get '+ name + ' ' + key)
     reply = JSON.parse(reply)
     var time = findTime(new Date(reply.time))
-    return "Time Since "+ reply.name +": "+ time
+    return "*Time Since "+ reply.name +":* "+ time
   },
   set: function(name, key){
     return name + " has been set!"
@@ -213,7 +223,7 @@ var routes = {
     console.log('reset')
     reply = JSON.parse(reply)
     var time = findTime(new Date(reply.time))
-    return "Time Since "+ name +": "+ time
+    return "*Time Since "+ name +":* "+ time
   }
 
 }
