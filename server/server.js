@@ -47,6 +47,9 @@ app.post('/slack', (req, res, next)=>{
     var response = router({res, text, command, name, key, admin})
   }
 })
+app.get('/', (req, res, next)=>{
+  res.send("Hello World. From Time Since")
+})
 
 app.listen(port)
 console.log('running on '+ port)
