@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 const express = require('express');
 const cors = require('cors');
@@ -214,7 +214,7 @@ var routes = {
     return "*Time Since "+ reply.name +":* "+ time
   },
   set: function(name, key){
-    return name + " has been set!"
+    return "*"+name+"* has been set!"
   },
   error: function(){
     return {
@@ -226,7 +226,7 @@ var routes = {
     console.log('reset')
     reply = JSON.parse(reply)
     var time = findTime(new Date(reply.time))
-    return "*Time Since "+ name +":* "+ time
+    return "*"+name +":* has been reset. It was last at: "+ time
   }
 
 }
