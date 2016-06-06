@@ -21,7 +21,6 @@ client.on("connect", function(){
   console.log("Connected to Redis")
 })
 
-
 const port = process.env.VCAP_APP_PORT || 3000;
 const host = process.env.VCAP_APP_HOST || 'localhost';
 
@@ -48,6 +47,7 @@ app.post('/slack', (req, res, next)=>{
   }
 })
 app.get('/', (req, res, next)=>{
+  debugger
   res.send("Hello World. From Time Since")
 })
 
