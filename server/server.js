@@ -47,62 +47,12 @@ app.post('/slack', (req, res, next)=>{
   }
 })
 app.get('/', (req, res, next)=>{
-  debugger
   res.send("Hello World. From Time Since")
 })
 
 app.listen(port)
 console.log('running on '+ port)
 
-/* HELPERS
-~~~~~~~~~~~~~~~~~~~ */
-function findTime(date){
-  var now = new Date()
-  var diff = now - date
-
-  return formatTime(diff)
-}
-
-function formatTime(milliseconds) {
-   var s = Math.floor(milliseconds / 1000)
-   var m=0, h=0, d=0;
-
-   if(s / 60 >= 1){
-     m = Math.floor(s / 60)
-     s = s % 60
-   }
-   if(m / 60 >= 1){
-     h = Math.floor(m / 60)
-     m = m % 60
-   }
-   if(h / 24 >= 1){
-     d = Math.floor(h/24)
-     h = h % 24
-   }
-
-
-   var result = s + " seconds"
-   if(m) result = `${m} minutes ${s} seconds`
-   if(h) result = `${h} hours ${m} minutes ${s} seconds`
-   if(d) result = `${d} days ${h} hours ${m} minutes ${s} seconds`
-   return result
-}
-
-function formatKey(string){
-  var temp = string.toLowerCase()
-  return temp.split(' ').join('-')
-}
-
-function unformatKey(key){
-  return key.replace(/\-/g, ' ')
-}
-
-function formatObj(name){
-  return JSON.stringify({
-                     name: name,
-                     time: new Date()
-                   })
-}
 
 var router = function(opts){
   let res = opts.res,
@@ -123,9 +73,9 @@ var router = function(opts){
 
   if(command == '#list'){
     client.keys('*', function(err, reply){
-      if(err){
-        throw new Error(err)
+      if(err){        
         res.send(routes.error())
+        throw new Error(err)
       }
       else {
         console.log(Array.isArray(reply))
@@ -143,8 +93,8 @@ var router = function(opts){
     console.log('set')
     client.setnx(key, formatObj(name), function(err,reply){
       if(err){
-        throw new Error(err)
         res.send(routes.error())
+        throw new Error(err)
       }
       else if(reply == 0){ res.send(routes.incorrect()) }
       else {
@@ -158,8 +108,8 @@ var router = function(opts){
     console.log('reset')
     client.getset(key, formatObj(name), function(err,reply){
       if(err){
-        throw new Error(err)
         res.send(routes.incorrect())
+        throw new Error(err)
       }
       else {
         r.text = routes.reset(name, key, reply)
@@ -171,8 +121,8 @@ var router = function(opts){
   else if(command == '#get'){
     client.get(key, function(err,reply){
       if(err){
-        throw new Error(err)
         res.send(routes.incorrect())
+        throw new Error(err)
       }
       else {
         r.text = routes.get(name, key, reply)
@@ -229,4 +179,54 @@ var routes = {
     return "*"+name +":* has been reset. It was last at: "+ time
   }
 
+}
+
+/* HELPERS
+~~~~~~~~~~~~~~~~~~~ */
+function findTime(date){
+  var now = new Date()
+  var diff = now - date
+
+  return formatTime(diff)
+}
+
+function formatTime(milliseconds) {
+   var s = Math.floor(milliseconds / 1000)
+   var m=0, h=0, d=0;
+
+   if(s / 60 >= 1){
+     m = Math.floor(s / 60)
+     s = s % 60
+   }
+   if(m / 60 >= 1){
+     h = Math.floor(m / 60)
+     m = m % 60
+   }
+   if(h / 24 >= 1){
+     d = Math.floor(h/24)
+     h = h % 24
+   }
+
+
+   var result = s + " seconds"
+   if(m) result = `${m} minutes ${s} seconds`
+   if(h) result = `${h} hours ${m} minutes ${s} seconds`
+   if(d) result = `${d} days ${h} hours ${m} minutes ${s} seconds`
+   return result
+}
+
+function formatKey(string){
+  var temp = string.toLowerCase()
+  return temp.split(' ').join('-')
+}
+
+function unformatKey(key){
+  return key.replace(/\-/g, ' ')
+}
+
+function formatObj(name){
+  return JSON.stringify({
+                     name: name,
+                     time: new Date()
+                   })
 }
