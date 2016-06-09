@@ -32,9 +32,9 @@ app.use(bodyParser.json());
 //POST
 app.post('/slack', (req, res, next)=>{
   var b = req.body
-  if(b.token != "VD5a2oMjTKS5vwNKrjfkdIm6" || b.channel_id != "G0U83AL2E"){
-    res.end("You have the wrong credentials. Contact @j.skinner to get credentials.")
-  } else {
+  console.log(b)
+  if((b["user_name"] == 'j.skinner' && b.token == "VD5a2oMjTKS5vwNKrjfkdIm6") || 
+      b.token == "VD5a2oMjTKS5vwNKrjfkdIm6" && b.channel_id == "G0U83AL2E"){
     var text = b.text
     var admin = !!text.match(/\!\!| \!\!|\!\! /g)
     var expression = new RegExp(/\$data\=(.*)/).exec(text)
@@ -48,7 +48,8 @@ app.post('/slack', (req, res, next)=>{
     var key = formatKey(name.trim())
 
     var response = router(res, client, {text, command, name, key, admin, data})
-    
+  } else {
+    res.end("You have the wrong credentials. Contact @j.skinner to get credentials.")
   }
 })
 app.get('/', (req, res, next)=>{
@@ -74,41 +75,35 @@ function router(res, client, opts){
   
   console.log(`TEXT: ${text},\n COMMAND: ${command}, \n DATA: ${data} \n NAME: ${name}`)
 
-  var r = {
-    response_type: 'in_channel',
-    text: 'There was a server error'
-  }
-  if(command == '#admin' || command == '#list' || command == '#help' ){
-    r.response_type = 'ephemeral'
-  }
-
   /* LIST 
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#list'){
     client.keys('*', function(err, reply){
-      if(err){
-        r.response_type = "ephemeral"
-        res.send(r)
-        return
+      if(err || reply.length == 0){
+        return res.send(formatResponse({
+          channel: false,
+          text: "There were no Timers found. Create one using #set"
+        }))
       } 
-      reply = reply.map(function(el){
-        return unformatKey(el)
+      reply = reply.map(function(el,i){
+        return i+1 +')'+ unformatKey(el)
       })
-      r.text = "*List of Timers:* \n" + reply.join('\n')
-      res.send(r)
-      return
+      var num = 1
+      return res.send(formatResponse({
+        channel: false, 
+        name: "List of Commands:",
+        text: reply.join('\n')
+      }))
+
     })
   }
   /* HELP 
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#help'){
-    r.text = "Using one of the following commands: \n \
-              *#set timer_name*: This will create a new timer and start counting the time thats passed. \n \
-              *#reset timer_name*: This will reset the time for the timer to 0. \n \
-              *#get timer_name*: This will return the current time on the timer, but not reset it. \n \
-              *#list*: This will list the names of the timers \n \
-              *#longest* or *#shortest* This will give you the shortest and longest times the Timer has seen. \n\
-              *$data=*  Use this when you would like to add data to the Timer. (during a #set or #reset command)" 
+    var r = formatResponse({
+    name: "Using one of the following commands:",
+    text: "#set timer_name: Creates a new timer \n #reset timer_name: Resets the time for the timer to 0. \n #get timer_name: Returns the current time on the timer. Doesn't reset. \n #list: Lists the names of timers. \n #longest or #shortest Lists Longest and Shortest times on Timer \n $data= Use to set data. (during a #set or #reset command)" 
+    })
     res.send(r)
     return
   }
@@ -117,10 +112,9 @@ function router(res, client, opts){
   if(command == '#reset'){
     client.get(key, function(err, reply){
       if(err || !reply){
-        r.response_type = "ephemeral"
-        r.text = err || "We did not find a Timer by that name"
-        res.send(r)
-        return
+        var r = formatResponse({channel: false})
+        return res.send(r)
+        
       } 
       reply = JSON.parse(reply)
       var now = new Date()
@@ -132,33 +126,23 @@ function router(res, client, opts){
         reply.longest = difference
         isLongest = true
       } 
-      if(tempTime < reply.shortest){
+      if(tempTime < reply.shortest || !reply.shortest){
         reply.shortest = difference
         isShortest = true
       }
 
       //set reply text
       var readableTime = findTime(tempTime)
-      r.text = "*"+ reply.name +"* has been reset. \n \
-      It was at: "+ readableTime
-
-      if(isLongest){
-        r.text += "\n This is your *longest* time."
-      } else if (isShortest){
-        r.text += "\n This is your *shortest* time."
-      }
-
-      //add attachments 
-      if(reply.data){
-        r.attachments= [{
-          fallback: "Couldn't find data! Sorry",
-          color: 'good',
-          pretext: 'This is the data that was attached to your Timer!',
-          title: "Click here to see the data!",
-          title_link: reply.data,
-          image_url: reply.data
-        }]
-      }
+      var r = formatResponse({
+        pretext: `${reply.name} has been reset! Here was the last one:`,
+        channel: !admin,
+        name: reply.name,
+        text: readableTime,
+        data: reply.data,
+        footer: (()=>{
+          return `Longest: ${formatTime(reply.longest)} \n Shortest: ${formatTime(reply.shortest)}`
+        })()
+      })
 
       //reset reply time + attachment
       reply.time = new Date()
@@ -186,20 +170,20 @@ function router(res, client, opts){
     obj = JSON.stringify(obj)
     client.setnx(key, obj, function(err, reply){
       if(err){
-        r.response_type = 'ephemeral'
-        res.send(r)
-        return
+        return formatResponse({channel: false})
       } else if(reply == 0){
-        r.response_type = 'ephemeral'
-        r.text = 'This Timer already exists!'
-        res.send(r)
-        return
-
+        return res.send(formatResponse({
+          channel: false,
+          name: "OOPS!",
+          text:`It looks like ${name.toUpperCase()} already exists!`
+        }))
       } else {
-        r.text = `*${name.toUpperCase()}* has been set!`
+        return res.send(formatResponse({
+          channel: !admin,
+          name: name.toUpperCase(),
+          text: `${name.toUpperCase()} has been set!`
+        }))
       }
-      res.send(r)
-      return
     })
 
   }
@@ -207,38 +191,27 @@ function router(res, client, opts){
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#get'){
     client.get(key, function(err, reply){
-      debugger;
       if(err || !reply){
-        r.response_type = "ephemeral"
-        r.text = err || "We did not find a Timer by that name."
-        res.send(r)
-        return
+        return res.send(formatResponse({channel: false}))
       }
       reply = JSON.parse(reply)
       reply.time = new Date(reply.time)
-      r.text = `*${reply.name}* is currently at: \n ${findTime(reply.time)}`
-      if(reply.data){
-        r.attachments = [{
-          fallback: "Couldn't find data! Sorry",
-          color: 'good',
-          pretext: 'This is the data that was attached to your Timer!',
-          title: "This happened "+ findTime(reply.time)+ " ago",
-          title_link: reply.data,
-          image_url: reply.data
-        }]
-      }
-      res.send(r)
-      return
+      return res.send(formatResponse({
+        channel: !admin,
+        name: reply.name,
+        data: reply.data,
+        text: findTime(reply.time),
+        footer: (()=>{
+          return `Longest: ${formatTime(reply.longest)} \n Shortest: ${formatTime(reply.shortest)}`
+        })()
+      }))
     })
   }
 
   if(command == '#longest' || command == '#shortest'){
     client.get(key, function(err, reply){
       if(err || !reply){
-        r.response_type = "ephemeral"
-        r.text = err || "We did not find a Timer by that name."
-        res.send(r)
-        return
+        return res.send(formatResponse({channel: false}))
       }
       reply = JSON.parse(reply)
       reply.time = new Date(reply.time)
@@ -253,15 +226,15 @@ function router(res, client, opts){
         isShortest = true
       }
 
-      
-      var longText = isLongest ? formatTime(new Date(difference)) : formatTime(new Date(reply.longest))
-      var shortText = isShortest ? formatTime(new Date(difference)) : formatTime(new Date(reply.shortest)) 
-
-      r.text = `*Longest* and *Shortest* times for ${reply.name} are:
-                *Longest:* ${longText}
-                *Shortest:* ${shortText}`
-      res.send(r)
-      return
+      return res.send(formatResponse({
+        channel: !admin,
+        name: reply.name,
+        data: reply.data,
+        footer: `Current Time: ${findTime(reply.time)}`,
+        text: (()=>{
+          return `Longest: ${formatTime(reply.longest)} \n Shortest: ${formatTime(reply.shortest)}`
+        })()
+      }))
     })
   }
 }
@@ -319,4 +292,22 @@ function formatObj(name){
                      shortest: Infinity,
                      data: null
                    })
+}
+// args = {channel, name, text, pretext, data, footer}
+function formatResponse(args){
+  var obj = {
+            "fallback": "Couldn't find data! Sorry",
+            "color": args.channel ? "good" : "#333333",
+            "author_name": "Time Since:",
+            "title": args.name || "Sorry!",
+            "text": args.text || "Something went wrong",
+  }
+  if(args.pretext) obj.pretext = args.pretext
+  if(args.data) obj["image_url"] = args.data
+  if(args.footer) obj.footer = args.footer
+  
+  return {
+                response_type: args.channel ? "in_channel" : "ephemeral",
+                attachments:[obj]
+              }
 }
