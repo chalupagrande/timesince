@@ -37,13 +37,18 @@ app.post('/slack', (req, res, next)=>{
   } else {
     var text = b.text
     var admin = !!text.match(/\!\!| \!\!|\!\! /g)
-    var text = text.replace(/\!\!| \!\!|\!\! /g, '')
-    var command = text.match(/\#set|\#get|\#reset|\#help|\#list/g)
+    var expression = new RegExp(/\$data\=(.*)/).exec(text)
+    var data = expression ? expression[1] : null;
+    if(expression){ text = text.replace(expression[0],'') }
+    text = text.replace(/\!\!| \!\!|\!\! /g, '')
+    text = text.trim()
+    var command = text.match(/\#set|\#get|\#reset|\#help|\#list|\#longest|\#shortest/g)
     command = !!command ? command[0] : "#get"
     var name = text.replace(new RegExp(command+' '), '')
-    var key = formatKey(name)
+    var key = formatKey(name.trim())
 
-    var response = router({res, text, command, name, key, admin})
+    var response = router(res, client, {text, command, name, key, admin, data})
+    
   }
 })
 app.get('/', (req, res, next)=>{
@@ -54,132 +59,214 @@ app.listen(port)
 console.log('running on '+ port)
 
 
-var router = function(opts){
-  let res = opts.res,
-      text = opts.text,
+/* 
+~~~~~~~~~~~~~~~~~~~~~~~ 
+ROUTER 
+~~~~~~~~~~~~~~~~~~~~~~~
+*/
+function router(res, client, opts){
+  var text = opts.text,
       command = opts.command,
       name = opts.name,
       key = opts.key,
-      admin = opts.isAdmin;
+      admin = opts.isAdmin,
+      data = opts.data;
+  
+  console.log(`TEXT: ${text},\n COMMAND: ${command}, \n DATA: ${data} \n NAME: ${name}`)
 
-
-  let r = {
-    "response_type": "in_channel"
-  };
-
-  if(admin){
-      result.response_type = "ephemeral"
+  var r = {
+    response_type: 'in_channel',
+    text: 'There was a server error'
+  }
+  if(command == '#admin' || command == '#list' || command == '#help' ){
+    r.response_type = 'ephemeral'
   }
 
+  /* LIST 
+  ~~~~~~~~~~~~~~~~~~ */
   if(command == '#list'){
     client.keys('*', function(err, reply){
-      if(err){        
-        res.send(routes.error())
-        throw new Error(err)
-      }
-      else {
-        console.log(Array.isArray(reply))
-        reply = reply.map((el)=>{
-          return unformatKey(el)
-        })
+      if(err){
         r.response_type = "ephemeral"
-        r.text = "*List of Timers:* \n" + reply.join('\n')
         res.send(r)
-      }
+        return
+      } 
+      reply = reply.map(function(el){
+        return unformatKey(el)
+      })
+      r.text = "*List of Timers:* \n" + reply.join('\n')
+      res.send(r)
+      return
     })
   }
+  /* HELP 
+  ~~~~~~~~~~~~~~~~~~ */
+  if(command == '#help'){
+    r.text = "Using one of the following commands: \n \
+              *#set timer_name*: This will create a new timer and start counting the time thats passed. \n \
+              *#reset timer_name*: This will reset the time for the timer to 0. \n \
+              *#get timer_name*: This will return the current time on the timer, but not reset it. \n \
+              *#list*: This will list the names of the timers \n \
+              *#longest* or *#shortest* This will give you the shortest and longest times the Timer has seen. \n\
+              *$data=*  Use this when you would like to add data to the Timer. (during a #set or #reset command)" 
+    res.send(r)
+    return
+  }
+  /* RESET
+  ~~~~~~~~~~~~~~~~~~ */
+  if(command == '#reset'){
+    client.get(key, function(err, reply){
+      if(err || !reply){
+        r.response_type = "ephemeral"
+        r.text = err || "We did not find a Timer by that name"
+        res.send(r)
+        return
+      } 
+      reply = JSON.parse(reply)
+      var now = new Date()
+      //check if its the longest or shortest
+      var tempTime = new Date(reply.time)
+      var difference = now - tempTime
+      var isLongest, isShortest;
+      if(difference > reply.longest){
+        reply.longest = difference
+        isLongest = true
+      } 
+      if(tempTime < reply.shortest){
+        reply.shortest = difference
+        isShortest = true
+      }
 
-  else if(command == '#set'){
-    console.log('set')
-    client.setnx(key, formatObj(name), function(err,reply){
+      //set reply text
+      var readableTime = findTime(tempTime)
+      r.text = "*"+ reply.name +"* has been reset. \n \
+      It was at: "+ readableTime
+
+      if(isLongest){
+        r.text += "\n This is your *longest* time."
+      } else if (isShortest){
+        r.text += "\n This is your *shortest* time."
+      }
+
+      //add attachments 
+      if(reply.data){
+        r.attachments= [{
+          fallback: "Couldn't find data! Sorry",
+          color: 'good',
+          pretext: 'This is the data that was attached to your Timer!',
+          title: "Click here to see the data!",
+          title_link: reply.data,
+          image_url: reply.data
+        }]
+      }
+
+      //reset reply time + attachment
+      reply.time = new Date()
+      reply.data = data
+      client.set(key, JSON.stringify(reply), function(err, reply){
+        if(err){
+          console.log(err)
+          throw new Error(err)
+        }
+      })
+      res.send(r)
+      return
+    })
+  }
+  /* SET 
+  ~~~~~~~~~~~~~~~~~~ */
+  if(command == '#set'){
+    var obj = {
+      name: name.toUpperCase(),
+      time: new Date(),
+      longest: 0,
+      shortest: Infinity,
+      data: data
+    }
+    obj = JSON.stringify(obj)
+    client.setnx(key, obj, function(err, reply){
       if(err){
-        res.send(routes.error())
-        throw new Error(err)
-      }
-      else if(reply == 0){ res.send(routes.incorrect()) }
-      else {
-        r.text = routes.set(name, key)
+        r.response_type = 'ephemeral'
         res.send(r)
+        return
+      } else if(reply == 0){
+        r.response_type = 'ephemeral'
+        r.text = 'This Timer already exists!'
+        res.send(r)
+        return
+
+      } else {
+        r.text = `*${name.toUpperCase()}* has been set!`
       }
+      res.send(r)
+      return
+    })
+
+  }
+  /* GET 
+  ~~~~~~~~~~~~~~~~~~ */
+  if(command == '#get'){
+    client.get(key, function(err, reply){
+      debugger;
+      if(err || !reply){
+        r.response_type = "ephemeral"
+        r.text = err || "We did not find a Timer by that name."
+        res.send(r)
+        return
+      }
+      reply = JSON.parse(reply)
+      reply.time = new Date(reply.time)
+      r.text = `*${reply.name}* is currently at: \n ${findTime(reply.time)}`
+      if(reply.data){
+        r.attachments = [{
+          fallback: "Couldn't find data! Sorry",
+          color: 'good',
+          pretext: 'This is the data that was attached to your Timer!',
+          title: "This happened "+ findTime(reply.time)+ " ago",
+          title_link: reply.data,
+          image_url: reply.data
+        }]
+      }
+      res.send(r)
+      return
     })
   }
 
-  else if(command == '#reset'){
-    console.log('reset')
-    client.getset(key, formatObj(name), function(err,reply){
-      if(err){
-        res.send(routes.incorrect())
-        throw new Error(err)
-      }
-      else {
-        r.text = routes.reset(name, key, reply)
+  if(command == '#longest' || command == '#shortest'){
+    client.get(key, function(err, reply){
+      if(err || !reply){
+        r.response_type = "ephemeral"
+        r.text = err || "We did not find a Timer by that name."
         res.send(r)
+        return
       }
-    })
-  }
+      reply = JSON.parse(reply)
+      reply.time = new Date(reply.time)
+      var now = new Date()
+      var difference = now - reply.time 
+      var isLongest, isShortest;
+      if(difference > reply.longest){
+        reply.longest = difference
+        isLongest = true
+      } else if (difference < reply.shortest){
+        reply.shortest = difference
+        isShortest = true
+      }
 
-  else if(command == '#get'){
-    client.get(key, function(err,reply){
-      if(err){
-        res.send(routes.incorrect())
-        throw new Error(err)
-      }
-      else {
-        r.text = routes.get(name, key, reply)
-        res.send(r)
-      }
-    })
-  }
+      
+      var longText = isLongest ? formatTime(new Date(difference)) : formatTime(new Date(reply.longest))
+      var shortText = isShortest ? formatTime(new Date(difference)) : formatTime(new Date(reply.shortest)) 
 
-  else if(command == '#help'){
-    res.send(routes.help())
+      r.text = `*Longest* and *Shortest* times for ${reply.name} are:
+                *Longest:* ${longText}
+                *Shortest:* ${shortText}`
+      res.send(r)
+      return
+    })
   }
 }
 
-var routes = {
-  admin: function(name){
-    return "This is admin mode"
 
-  },
-  incorrect: function(){
-    return {
-      response_type: 'ephemeral',
-      text: "That command or timer does not exist or already exists. Use #help for a list of commands"
-    }
-  },
-  help: function(){
-    return {
-      response_type: 'ephemeral',
-      text:   "Using one of the following commands: \n \
-              *#set timer_name:* This will create a new timer and start counting the time thats passed. \n \
-              *#reset timer_name:* This will reset the time for the timer to 0. \n \
-              *#get timer_name:* This will return the current time on the timer, but not reset it. \n \
-              *#list:* This will list the names of the timers"
-    }
-  },
-  get: function(name, key, reply){
-    console.log('get '+ name + ' ' + key)
-    reply = JSON.parse(reply)
-    var time = findTime(new Date(reply.time))
-    return "*Time Since "+ reply.name +":* "+ time
-  },
-  set: function(name, key){
-    return "*"+name+"* has been set!"
-  },
-  error: function(){
-    return {
-      response_type: "ephemeral",
-      text: "There seems to have been a server error"
-    }
-  },
-  reset: function(name, key, reply){
-    console.log('reset')
-    reply = JSON.parse(reply)
-    var time = findTime(new Date(reply.time))
-    return "*"+name +":* has been reset. It was last at: "+ time
-  }
-
-}
 
 /* HELPERS
 ~~~~~~~~~~~~~~~~~~~ */
@@ -221,12 +308,15 @@ function formatKey(string){
 }
 
 function unformatKey(key){
-  return key.replace(/\-/g, ' ')
+  return key.replace(/\-/g, ' ').toUpperCase()
 }
 
 function formatObj(name){
   return JSON.stringify({
                      name: name,
-                     time: new Date()
+                     time: new Date(),
+                     longest: 0,
+                     shortest: Infinity,
+                     data: null
                    })
 }
