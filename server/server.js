@@ -168,24 +168,44 @@ function router(res, client, opts){
       data: data
     }
     obj = JSON.stringify(obj)
-    client.setnx(key, obj, function(err, reply){
-      if(err){
-        return formatResponse({channel: false})
-      } else if(reply == 0){
+    client.get(key, function(getError, getReply){
+      if(getError){
+        return res.send(formatResponse({channel: false}))
+      } else if (!getReply){
+        client.set(key, obj, function(setError, setReply){
+          if(setError || !setReply){
+            return res.send(formatResponse({channel: false}))
+          }
+          return res.send(formatResponse({
+            channel: !admin,
+            name: name.toUpperCase(),
+            text: `${name.toUpperCase()} has been set!`
+          }))
+        })
+      } else if (getReply && data){
+        var reply = JSON.parse(getReply)
+        reply.data = data
+        reply = JSON.stringify(reply)
+        client.set(key, reply, function(setError2, setReply2){
+          if(setError2){
+            return res.send(formatResponse({channel: false}))
+          } else 
+            return res.send(formatResponse({
+              channel: true,
+              name: name.toUpperCase(),
+              text: `The Data was set for ${name.toUpperCase()} as: \n ${data}`,
+              data: data
+            }))
+        })
+      } else {
         return res.send(formatResponse({
           channel: false,
           name: "OOPS!",
-          text:`It looks like ${name.toUpperCase()} already exists!`
-        }))
-      } else {
-        return res.send(formatResponse({
-          channel: !admin,
-          name: name.toUpperCase(),
-          text: `${name.toUpperCase()} has been set!`
+          text: `It looks like ${name.toUpperCase()} already exists. If you would like to add DATA to it make sure to include $data=`
         }))
       }
-    })
 
+    })
   }
   /* GET 
   ~~~~~~~~~~~~~~~~~~ */
