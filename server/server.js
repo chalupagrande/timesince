@@ -33,7 +33,7 @@ app.use(bodyParser.json());
 app.post('/slack', (req, res, next)=>{
   var b = req.body
   console.log(b)
-  if((b["user_name"] == 'j.skinner' && b.token == "VD5a2oMjTKS5vwNKrjfkdIm6") || 
+  if((b["user_name"] == 'j.skinner' && b.token == "VD5a2oMjTKS5vwNKrjfkdIm6") ||
       b.token == "VD5a2oMjTKS5vwNKrjfkdIm6" && b.channel_id == "G0U83AL2E"){
     var text = b.text
     var admin = !!text.match(/\!\!| \!\!|\!\! /g)
@@ -60,9 +60,9 @@ app.listen(port)
 console.log('running on '+ port)
 
 
-/* 
-~~~~~~~~~~~~~~~~~~~~~~~ 
-ROUTER 
+/*
+~~~~~~~~~~~~~~~~~~~~~~~
+ROUTER
 ~~~~~~~~~~~~~~~~~~~~~~~
 */
 function router(res, client, opts){
@@ -72,10 +72,10 @@ function router(res, client, opts){
       key = opts.key,
       admin = opts.isAdmin,
       data = opts.data;
-  
+
   console.log(`TEXT: ${text},\n COMMAND: ${command}, \n DATA: ${data} \n NAME: ${name}`)
 
-  /* LIST 
+  /* LIST
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#list'){
     client.keys('*', function(err, reply){
@@ -84,25 +84,25 @@ function router(res, client, opts){
           channel: false,
           text: "There were no Timers found. Create one using #set"
         }))
-      } 
+      }
       reply = reply.map(function(el,i){
         return i+1 +')'+ unformatKey(el)
       })
       var num = 1
       return res.send(formatResponse({
-        channel: false, 
+        channel: false,
         name: "List of Commands:",
         text: reply.join('\n')
       }))
 
     })
   }
-  /* HELP 
+  /* HELP
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#help'){
     var r = formatResponse({
     name: "Using one of the following commands:",
-    text: "#set timer_name: Creates a new timer \n #reset timer_name: Resets the time for the timer to 0. \n #get timer_name: Returns the current time on the timer. Doesn't reset. \n #list: Lists the names of timers. \n #longest or #shortest Lists Longest and Shortest times on Timer \n $data= Use to set data. (during a #set or #reset command)" 
+    text: "#set timer_name: Creates a new timer \n #reset timer_name: Resets the time for the timer to 0. \n #get timer_name: Returns the current time on the timer. Doesn't reset. \n #list: Lists the names of timers. \n #longest or #shortest Lists Longest and Shortest times on Timer \n $data= Use to set data. (during a #set or #reset command)"
     })
     res.send(r)
     return
@@ -114,8 +114,8 @@ function router(res, client, opts){
       if(err || !reply){
         var r = formatResponse({channel: false})
         return res.send(r)
-        
-      } 
+
+      }
       reply = JSON.parse(reply)
       var now = new Date()
       //check if its the longest or shortest
@@ -125,8 +125,8 @@ function router(res, client, opts){
       if(difference > reply.longest){
         reply.longest = difference
         isLongest = true
-      } 
-      if(tempTime < reply.shortest || !reply.shortest){
+      }
+      if(difference < reply.shortest || !reply.shortest){
         reply.shortest = difference
         isShortest = true
       }
@@ -157,7 +157,7 @@ function router(res, client, opts){
       return
     })
   }
-  /* SET 
+  /* SET
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#set'){
     var obj = {
@@ -189,7 +189,7 @@ function router(res, client, opts){
         client.set(key, reply, function(setError2, setReply2){
           if(setError2){
             return res.send(formatResponse({channel: false}))
-          } else 
+          } else
             return res.send(formatResponse({
               channel: true,
               name: name.toUpperCase(),
@@ -207,7 +207,7 @@ function router(res, client, opts){
 
     })
   }
-  /* GET 
+  /* GET
   ~~~~~~~~~~~~~~~~~~ */
   if(command == '#get'){
     client.get(key, function(err, reply){
@@ -236,7 +236,7 @@ function router(res, client, opts){
       reply = JSON.parse(reply)
       reply.time = new Date(reply.time)
       var now = new Date()
-      var difference = now - reply.time 
+      var difference = now - reply.time
       var isLongest, isShortest;
       if(difference > reply.longest){
         reply.longest = difference
@@ -323,9 +323,19 @@ function formatResponse(args){
             "text": args.text || "Something went wrong",
   }
   if(args.pretext) obj.pretext = args.pretext
-  if(args.data) obj["image_url"] = args.data
+  if(args.data){
+    if(args.data.match(/\.(gif|jpg|jpeg|tiff|png)$/)){
+      obj["image_url"] = args.data
+    } else {
+      obj.fields = [{
+        title: "Attached Data:",
+        value: args.data
+      }]
+
+    }
+  }
   if(args.footer) obj.footer = args.footer
-  
+
   return {
                 response_type: args.channel ? "in_channel" : "ephemeral",
                 attachments:[obj]
